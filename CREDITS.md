@@ -15,9 +15,8 @@
 - `resources/frontend-zh-CN.json`
 - `resources/desktop-zh-CN.json`
 - `resources/statsig-zh-CN.json`
-- 部分安装脚本、补丁脚本与验证脚本的结构和思路
 
-这些内容构成了当前仓库中文语言资源和早期本地补丁方案的基础。
+这些内容构成了当前仓库中文语言资源的基础。
 
 ## 新增内容
 

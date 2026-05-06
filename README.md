@@ -19,7 +19,6 @@
 - `resources/frontend-zh-CN.json`
 - `resources/desktop-zh-CN.json`
 - `resources/statsig-zh-CN.json`
-- 部分安装、补丁、验证脚本结构
 
 当前仓库中，以下内容是这次新增或重构的核心部分：
 

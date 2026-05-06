@@ -4,8 +4,7 @@
   "private": true,
   "description": "Proxy launcher for Claude Desktop Chinese localization",
   "scripts": {
-    "proxy": "node scripts/claude-zh-proxy.js",
-    "launch-proxy": "node scripts/launch-claude-zh-proxy.js"
+    "proxy": "node scripts/claude-zh-proxy.js"
   },
   "dependencies": {
     "fzstd": "^0.1.1",

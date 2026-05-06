@@ -1,170 +1,124 @@
-# Claude Desktop 中文汉化包 v1.0
-（汉化可用并不完美，作者自发布后正在朝着完美爆肝,24小时内会推出2.0）
+# Claude Desktop 中文代理版
 
-<div align="center">
+面向 Windows 版 Claude Desktop `1.6259.1.x` 的中文化项目。
 
-[![GitHub release](https://img.shields.io/badge/Claude-1.5354.0.0-blue)](https://github.com/Po1nt9/Claude-Desktop-Chinese)
-[![Coverage](https://img.shields.io/badge/覆盖率-99.08%25-success)](https://github.com/Po1nt9/Claude-Desktop-Chinese)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+这个版本不再只依赖修改本地安装包，而是优先采用“正版客户端 + 本地代理替换远端语言资源”的方案，让官方 `WindowsApps` 里的 Claude 直接显示中文界面。
 
-**Claude Desktop 完全中文化方案** — 无需魔法，一键部署。
+## 项目说明
 
-[English](#english) | [简体中文](#简体中文)
+Claude Desktop 这个版本的主界面并不完全由本地资源渲染，很多内容来自：
 
-</div>
+- `https://claude.ai`
+- `https://assets-proxy.anthropic.com`
 
----
+因此，传统的“只往本地安装目录里塞 `zh-CN.json`”在这个版本上不够。  
+本项目当前的主方案是：
 
-> ⚠️ **法律声明 / Legal Notice**
->
-> **本软件并非 Anthropic 官方产品。** "Claude" 名称及相关标识是 **Anthropic** 的注册商标。
-> 本项目与 Anthropic **无任何关联、赞助或认可关系**。本软件仅对 Claude Desktop 的界面文字进行
-> 简体中文翻译，**不修改核心功能、不绕过付费限制、不收集用户数据**。使用前请阅读完整的
-> [免责声明](DISCLAIMER.md)。
->
-> _This is NOT an official Anthropic product. "Claude" is a trademark of Anthropic.
-> This project is not affiliated with or endorsed by Anthropic. See full [Disclaimer](DISCLAIMER.md)._
+1. 启动正版 Claude。
+2. 让它通过本地代理访问 `claude.ai`。
+3. 拦截语言资源请求。
+4. 把远端默认英文语言包替换为本地中文语言包。
+5. 再补一层页面级文本替换，处理少量硬编码英文。
 
----
+## 当前效果
 
-<a name="简体中文"></a>
+当前已经实现：
 
-## 简体中文
+- 正版 Claude 主界面中文化
+- 欢迎语、输入框提示、底部功能按钮中文化
+- 左侧主导航大部分中文化
+- 大量远端加载的界面文本改为中文
 
-### 简介
+截图中已经可以看到：
 
-本项目为 Claude Desktop for Windows 提供完整的中文界面汉化，覆盖 **99%+** 的界面字符串。
+- `新对话`
+- `项目`
+- `制品`
+- `自定义`
+- `代码`
+- `协作`
+- `今天我能帮你做些什么？`
 
-**效果预览：** 安装后启动 Claude Desktop，界面将全面显示为简体中文 —— 菜单、侧边栏、筛选器、设置面板、弹窗提示等均已完成汉化。
+## 推荐启动方式
 
-### 功能特性
+推荐直接使用：
 
-- ✅ **双层汉化架构** — JSON 翻译文件 + JS 源码补丁，全面覆盖
-- ✅ **一键安装** — 双击 `中文安装.bat` 即可
-- ✅ **自动检测** — 自动定位 Claude 安装目录
-- ✅ **自动备份** — 安装前备份原始文件
-- ✅ **安全部署** — 非破坏性修补，可随时卸载恢复
+`run-official-zh-proxy.bat`
 
-### 安装方法
+或者桌面快捷方式：
 
-**方法一：一键安装（推荐）**
+`Claude 正版中文代理.lnk`
 
-1. 下载本项目到本地
-2. **以管理员身份** 双击 `scripts\中文安装.bat`
-3. 等待安装完成
-4. 重启 Claude Desktop
+它会做这些事：
 
-**方法二：PowerShell**
+1. 关闭现有 Claude 和本地代理进程
+2. 启动本地中文代理
+3. 清理安全缓存
+4. 以 `--proxy-server=http://127.0.0.1:8877 --ignore-certificate-errors --lang=zh-CN` 启动官方 Claude
+
+## 主要文件
+
+核心文件如下：
+
+- `scripts/claude-zh-proxy.js`
+  负责拦截 `claude.ai` 和 `assets-proxy.anthropic.com` 的请求，并返回中文资源
+
+- `scripts/Launch-Official-Proxy.ps1`
+  负责启动代理并拉起正版 Claude
+
+- `run-official-zh-proxy.bat`
+  一键启动入口
+
+- `resources/frontend-zh-CN.json`
+  主前端中文语言包
+
+- `resources/desktop-zh-CN.json`
+  桌面层中文语言包
+
+- `resources/statsig-zh-CN.json`
+  statsig 相关中文语言包
+
+## 安装和依赖
+
+如果是第一次使用：
 
 ```powershell
-# 以管理员身份运行 PowerShell
-cd 项目目录\scripts
-.\Install-Chinese.ps1
+npm install
 ```
 
-**方法三：Node.js**
+然后启动：
 
-```bash
-# 以管理员身份运行
-cd 项目目录
-node scripts/deploy-zh-cn.js
-node scripts/patch-filter-menu.js
-node scripts/patch-3p-descriptions.js
+```powershell
+.\run-official-zh-proxy.bat
 ```
 
-### 验证安装
+## 兼容说明
 
-```bash
-node scripts/_verify.js
-```
+当前主要针对：
 
-若全部通过（37/37 ✅），说明安装成功。
+- Windows
+- Claude Desktop MSIX 安装版
+- `1.6259.1.x`
 
-### 卸载
+如果 Claude 官方更新了远端前端资源名、请求路径或页面结构，代理规则可能需要同步调整。
 
-以管理员身份运行 `scripts\uninstall.ps1`，或手动恢复备份文件。
+## 其他模式
 
-> 备份位置：`%LOCALAPPDATA%\Claude-zh-CN-backup`
+仓库里仍然保留了之前的一些方案：
 
-### 翻译统计
+- 独立副本模式
+- 本地安装包补丁模式
+- 旧版本地 JS 文案补丁
 
-| 文件 | Key 数 | 类型 |
-|------|--------|------|
-| `desktop-zh-CN.json` | 361 | 桌面层（主进程）翻译 |
-| `frontend-zh-CN.json` | 13,293 | 前端层（渲染进程）翻译 |
-| `statsig-zh-CN.json` | 46 | Statsig 遥测翻译 |
-| **JS 硬编码补丁** | ≈247 处 | title/label/placeholder/description 等 |
-| **翻译覆盖率** | **99.08%** | 仅 122 条保留英文（品牌/缩写/格式串） |
+但对这个版本来说，**官方代理模式** 是当前最有效、最稳定的方案。
 
-### 注意事项
+## 免责声明
 
-- **需要管理员权限** — 因 Claude 安装在 `C:\Program Files\WindowsApps` 受保护目录
-- **Claude 更新后需重新安装** — WindowsApps 更新会还原所有修改，重新运行 `中文安装.bat` 即可
-- **主菜单不在此范围** — `app.asar` 中的 Electron 菜单字符串因数字签名原因未处理
-- 本工具仅适用于 **Windows** 版 Claude Desktop
+本项目不是 Anthropic 官方项目。
 
-### 技术架构
+- 不修改模型能力
+- 不绕过订阅限制
+- 不处理付费破解
+- 仅用于界面中文化和本地启动链路调整
 
-```
-┌─────────────────────────────────────────────────┐
-│                JS 源码补丁层                       │
-│  patch-filter-menu.js  → 150处 title/label/...   │
-│  patch-3p-descriptions.js → 85处 description/... │
-├─────────────────────────────────────────────────┤
-│              JSON 翻译文件层                       │
-│  frontend-zh-CN.json  → ion-dist/i18n/zh-CN.json │
-│  desktop-zh-CN.json   → app/resources/zh-CN.json │
-│  statsig-zh-CN.json   → i18n/statsig/zh-CN.json  │
-├─────────────────────────────────────────────────┤
-│               部署/验证层                          │
-│  deploy-zh-cn.js  → 部署 + 白名单 + locale 设置   │
-│  find-claude.js   → 自动检测 Claude 安装目录       │
-│  _verify.js       → 37项验证检查                   │
-└─────────────────────────────────────────────────┘
-```
-
----
-
-<a name="english"></a>
-
-## English
-
-### Overview
-
-**Claude Desktop Chinese Localization Pack** — Complete Chinese (Simplified) UI localization for Claude Desktop on Windows.
-
-Coverage: **99.08%** of UI strings across the application.
-
-### One-Click Install
-
-1. Download this repository
-2. **Run as Administrator** `scripts\中文安装.bat`
-3. Restart Claude Desktop
-
-### Verify
-
-```bash
-node scripts/_verify.js
-```
-
-All 37 checks should pass.
-
-### Important Notes
-
-- **Admin rights required** — Claude is installed in WindowsApps protected directory
-- **Re-apply after Claude updates** — WindowsApps updates restore original files
-- **99.08% coverage** — 122 strings retained in English (brand names, abbreviations, format strings)
-
-### Legal Disclaimer
-
-> ⚠️ **This is NOT an official Anthropic product.** "Claude" is a registered trademark of **Anthropic**.
-> This project is **not affiliated with, endorsed by, or connected to** Anthropic in any way.
->
-> This localization pack **only modifies UI display text** (button labels, menus, tooltips).
-> It does **NOT** alter AI model behavior, bypass paywalls/subscriptions, or collect user data.
->
-> Use at your own risk. See the full [Disclaimer](DISCLAIMER.md) for details.
-
-### License
-
-MIT
+使用前请自行判断风险。

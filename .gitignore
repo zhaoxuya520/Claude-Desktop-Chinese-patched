@@ -6,6 +6,7 @@ Desktop.ini
 # Node
 node_modules/
 npm-debug.log*
+.http-mitm-proxy/
 
 # Backup files (generated during deployment)
 *.backup

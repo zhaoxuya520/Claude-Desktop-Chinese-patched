@@ -1,0 +1,18 @@
+# OS
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Backup files (generated during deployment)
+*.backup
+*.snapshot
+*.artifact-backup
+*.artifact-space-backup
+*.product-space-backup
+
+# Claude project files
+.claude/

@@ -1,5 +1,5 @@
 param(
-    [string]$PatchedRoot = "C:\Users\24781\Downloads\Claude-Desktop-Chinese-1.6259.1-patched"
+    [string]$PatchedRoot
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,6 +8,10 @@ function Write-Step { param($msg) Write-Host "[*] $msg" -ForegroundColor Cyan }
 function Write-Success { param($msg) Write-Host "[+] $msg" -ForegroundColor Green }
 function Write-Warn { param($msg) Write-Host "[!] $msg" -ForegroundColor Yellow }
 function Write-Err { param($msg) Write-Host "[-] $msg" -ForegroundColor Red }
+
+if (-not $PatchedRoot) {
+    $PatchedRoot = Split-Path -Parent $PSScriptRoot
+}
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator

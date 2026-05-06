@@ -1,5 +1,5 @@
 param(
-    [string]$PatchedRoot = "C:\Users\24781\Downloads\Claude-Desktop-Chinese-1.6259.1-patched",
+    [string]$PatchedRoot,
     [int]$ProxyPort = 8877
 )
 
@@ -8,6 +8,10 @@ $ErrorActionPreference = "Stop"
 function Write-Step { param($msg) Write-Host "[*] $msg" -ForegroundColor Cyan }
 function Write-Success { param($msg) Write-Host "[+] $msg" -ForegroundColor Green }
 function Write-Err { param($msg) Write-Host "[-] $msg" -ForegroundColor Red }
+
+if (-not $PatchedRoot) {
+    $PatchedRoot = Split-Path -Parent $PSScriptRoot
+}
 
 if (-not (Test-Path -LiteralPath $PatchedRoot)) {
     throw "Patched root not found: $PatchedRoot"

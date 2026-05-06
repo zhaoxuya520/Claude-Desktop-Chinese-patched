@@ -4,6 +4,28 @@
 
 这个版本不再只依赖修改本地安装包，而是优先采用“正版客户端 + 本地代理替换远端语言资源”的方案，让官方 `WindowsApps` 里的 Claude 直接显示中文界面。
 
+## 致谢与来源
+
+本项目不是从零开始重写的。
+
+它基于原始项目 [Po1nt9/Claude-Desktop-Chinese](https://github.com/Po1nt9/Claude-Desktop-Chinese) 继续演进，并在其基础上新增了适配 Claude Desktop `1.6259.1.x` 的“正版客户端代理汉化”方案。
+
+当前仓库中，以下内容直接继承或延续自原项目：
+
+- `resources/frontend-zh-CN.json`
+- `resources/desktop-zh-CN.json`
+- `resources/statsig-zh-CN.json`
+- 部分安装、补丁、验证脚本结构
+
+当前仓库中，以下内容是这次新增或重构的核心部分：
+
+- `scripts/claude-zh-proxy.js`
+- `scripts/Launch-Official-Proxy.ps1`
+- `run-official-zh-proxy.bat`
+- 正版 `Claude.exe` 通过本地代理启动的整套链路
+
+原项目许可证为 MIT，本仓库继续保留 MIT 许可证，并在公开页面明确标注来源。更完整的说明见 [CREDITS.md](CREDITS.md)。
+
 ## 项目说明
 
 Claude Desktop 这个版本的主界面并不完全由本地资源渲染，很多内容来自：

@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
+const net = require("net");
 const fzstd = require("fzstd");
 const { Proxy } = require("http-mitm-proxy");
 
@@ -334,6 +335,50 @@ proxy.onResponse((ctx, callback) => {
   });
 
   callback();
+});
+
+// Selective MITM: only claude.ai is intercepted (i18n JSON swap + HTML hook
+// injection). Everything else is blind-tunneled (raw TCP passthrough, no TLS
+// interception). MITM-ing every host — http-mitm-proxy's default — breaks the
+// Cowork / Code modes: those connect to api.anthropic.com and
+// *.claudeusercontent.com (the VM bridge, SSH-over-WebSocket) from a Node
+// subprocess that does REAL certificate validation. --ignore-certificate-errors
+// only relaxes Chromium's renderer, not that Node client, so it rejects our
+// self-signed MITM cert and the session "goes offline" (socket hang up /
+// ECONNRESET). Tunneling gives those connections the genuine end-to-end TLS, so
+// everything except the translated pages works untouched.
+const tunneledHosts = new Set();
+proxy.onConnect((req, clientSocket, head, callback) => {
+  const parts = String(req.url || "").split(":");
+  const host = (parts[0] || "").toLowerCase();
+  const port = Number(parts[1]) || 443;
+
+  if (host === "claude.ai") {
+    return callback(); // let http-mitm-proxy terminate TLS and run our handlers
+  }
+
+  if (!tunneledHosts.has(host)) {
+    tunneledHosts.add(host);
+    log(`tunnel passthrough (no MITM): ${host}:${port}`);
+  }
+
+  clientSocket.pause();
+  const serverSocket = net.connect(port, host, () => {
+    clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+    if (head && head.length) serverSocket.write(head);
+    serverSocket.pipe(clientSocket);
+    clientSocket.pipe(serverSocket);
+    clientSocket.resume();
+  });
+  serverSocket.on("error", (err) => {
+    log(`tunnel error ${host}:${port}: ${err && err.message ? err.message : err}`);
+    clientSocket.destroy();
+  });
+  clientSocket.on("error", () => serverSocket.destroy());
+  serverSocket.on("close", () => clientSocket.destroy());
+  clientSocket.on("close", () => serverSocket.destroy());
+  // Intentionally do NOT call callback(): that keeps http-mitm-proxy from taking
+  // over this socket and running its MITM path.
 });
 
 proxy.listen({ port, host: "0.0.0.0" });

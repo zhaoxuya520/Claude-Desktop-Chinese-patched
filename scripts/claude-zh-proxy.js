@@ -10,13 +10,33 @@ const projectRoot = path.resolve(__dirname, "..");
 const resourcesDir = path.join(projectRoot, "resources");
 const frontendZhPath = path.join(resourcesDir, "frontend-zh-CN.json");
 const statsigZhPath = path.join(resourcesDir, "statsig-zh-CN.json");
+const dynamicZhPath = path.join(resourcesDir, "frontend-dynamic-zh-CN.json");
 const frontendEnPath = path.join(process.env.LOCALAPPDATA || process.env.USERPROFILE, "Claude-zh-CN", "app", "resources", "ion-dist", "i18n", "en-US.json");
 const overridesJson = "{}\n";
 
 const frontendEn = fs.existsSync(frontendEnPath) ? JSON.parse(fs.readFileSync(frontendEnPath, "utf8")) : {};
 const frontendZh = fs.readFileSync(frontendZhPath, "utf8");
 const statsigZh = fs.readFileSync(statsigZhPath, "utf8");
-const frontendZhObject = JSON.parse(frontendZh);
+const dynamicZh = fs.existsSync(dynamicZhPath) ? fs.readFileSync(dynamicZhPath, "utf8") : "{}\n";
+
+// Prefer the OFFICIAL zh strings shipped inside the installed Claude (path passed
+// by the launcher via CLAUDE_ZH_OFFICIAL_I18N), merged over the bundled fallback.
+// This auto-tracks whatever Claude version is installed and avoids bundling /
+// redistributing Anthropic's translation in this repo.
+const officialI18nPath = process.env.CLAUDE_ZH_OFFICIAL_I18N || "";
+let frontendZhObject = JSON.parse(frontendZh);
+if (officialI18nPath && fs.existsSync(officialI18nPath)) {
+  try {
+    const official = JSON.parse(fs.readFileSync(officialI18nPath, "utf8"));
+    frontendZhObject = Object.assign({}, frontendZhObject, official);
+    process.stderr.write(`[zh] merged official i18n (${Object.keys(official).length} keys) from ${officialI18nPath}\n`);
+  } catch (err) {
+    process.stderr.write(`[zh] failed to read official i18n: ${err.message}\n`);
+  }
+} else {
+  process.stderr.write(`[zh] official i18n not provided; using bundled fallback only\n`);
+}
+const frontendZhServed = JSON.stringify(frontendZhObject);
 const exactMap = (() => {
   const pending = new Map();
   const blocked = new Set();
@@ -190,7 +210,7 @@ function log(message) {
 function shouldPatchHtml(host, urlPath, contentType) {
   if (host !== "claude.ai") return false;
   if (!/text\/html/i.test(contentType || "")) return false;
-  return urlPath === "/" || urlPath.startsWith("/chat") || urlPath.startsWith("/settings") || urlPath.startsWith("/login") || urlPath.startsWith("/projects");
+  return urlPath === "/" || urlPath.startsWith("/chat") || urlPath.startsWith("/settings") || urlPath.startsWith("/login") || urlPath.startsWith("/projects") || urlPath.startsWith("/task") || urlPath.startsWith("/new") || urlPath.startsWith("/recents");
 }
 
 function sendTextResponse(ctx, statusCode, contentType, body) {
@@ -235,13 +255,19 @@ proxy.onRequest((ctx, callback) => {
 
   if (host === "claude.ai" && (urlPath === "/i18n/zh-CN.json" || urlPath === "/i18n/en-US.json")) {
     log(`serve local frontend zh: ${host}${urlPath}`);
-    sendTextResponse(ctx, 200, "application/json", frontendZh);
+    sendTextResponse(ctx, 200, "application/json", frontendZhServed);
     return;
   }
 
   if (host === "claude.ai" && (urlPath === "/i18n/statsig/zh-CN.json" || urlPath === "/i18n/statsig/en-US.json")) {
     log(`serve local statsig zh: ${host}${urlPath}`);
     sendTextResponse(ctx, 200, "application/json", statsigZh);
+    return;
+  }
+
+  if (host === "claude.ai" && (urlPath === "/i18n/dynamic/zh-CN.json" || urlPath === "/i18n/dynamic/en-US.json")) {
+    log(`serve local dynamic zh: ${host}${urlPath}`);
+    sendTextResponse(ctx, 200, "application/json", dynamicZh);
     return;
   }
 

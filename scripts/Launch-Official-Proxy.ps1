@@ -21,8 +21,33 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     throw "node.exe not found in PATH"
 }
 
-Write-Step "Stopping existing Claude and proxy processes..."
-Get-Process -Name "Claude" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+# Resolve the installed official Claude package up front: we need its paths both
+# to pass the official zh strings to the proxy and to activate it by AUMID.
+$pkg = Get-AppxPackage |
+    Where-Object { $_.Name -eq "Claude" } |
+    Sort-Object Version -Descending |
+    Select-Object -First 1
+
+if (-not $pkg) {
+    throw "Official Claude package not found"
+}
+
+$officialExe = Join-Path $pkg.InstallLocation "app\Claude.exe"
+if (-not (Test-Path -LiteralPath $officialExe)) {
+    throw "Official Claude exe not found: $officialExe"
+}
+
+# Official zh strings shipped inside THIS installed version. The proxy reads them
+# at runtime (see CLAUDE_ZH_OFFICIAL_I18N below) so we always track the installed
+# version and never bundle/redistribute Anthropic's translation.
+$officialZh = Join-Path $pkg.InstallLocation "app\resources\ion-dist\i18n\zh-CN.json"
+
+Write-Step "Stopping existing Claude Desktop (preserving Claude Code) and old proxy..."
+# Only kill the packaged Claude Desktop (runs from WindowsApps); never touch a
+# Claude Code CLI, which is ALSO named claude.exe but lives elsewhere.
+Get-CimInstance Win32_Process -Filter "Name='Claude.exe'" |
+    Where-Object { $_.CommandLine -match "WindowsApps" } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Get-CimInstance Win32_Process |
     Where-Object { $_.Name -eq "node.exe" -and $_.CommandLine -match "claude-zh-proxy.js" } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
@@ -33,6 +58,14 @@ $proxyErr = Join-Path $env:LOCALAPPDATA "Claude-zh-proxy-official-stderr.log"
 Remove-Item $proxyOut, $proxyErr -Force -ErrorAction SilentlyContinue
 
 Write-Step "Starting zh proxy on 127.0.0.1:$ProxyPort ..."
+if (Test-Path -LiteralPath $officialZh) {
+    $env:CLAUDE_ZH_OFFICIAL_I18N = $officialZh
+    Write-Step "Official zh source: $officialZh"
+} else {
+    Remove-Item Env:\CLAUDE_ZH_OFFICIAL_I18N -ErrorAction SilentlyContinue
+    Write-Err "Official zh not found; proxy will use bundled fallback only"
+}
+
 $proxyProc = Start-Process -FilePath "node.exe" `
     -ArgumentList @("scripts\claude-zh-proxy.js") `
     -WorkingDirectory $PatchedRoot `
@@ -56,22 +89,11 @@ if (-not $tcpOk) {
     throw "Proxy failed to start"
 }
 
-$pkg = Get-AppxPackage |
-    Where-Object { $_.Name -eq "Claude" } |
-    Sort-Object Version -Descending |
-    Select-Object -First 1
-
-if (-not $pkg) {
-    throw "Official Claude package not found"
-}
-
-$officialExe = Join-Path $pkg.InstallLocation "app\Claude.exe"
-if (-not (Test-Path -LiteralPath $officialExe)) {
-    throw "Official Claude exe not found: $officialExe"
-}
-
 Write-Step "Clearing safe frontend caches..."
-$userData = Join-Path $env:APPDATA "Claude"
+# MSIX virtualizes %APPDATA%\Claude into the package container, so the real user
+# data (and the Service Worker cache that can pin stale i18n/HTML) lives here.
+$userData = Join-Path $env:LOCALAPPDATA "Packages\$($pkg.PackageFamilyName)\LocalCache\Roaming\Claude"
+if (-not (Test-Path -LiteralPath $userData)) { $userData = Join-Path $env:APPDATA "Claude" }
 $cacheDirs = @(
     "Cache",
     "Code Cache",
@@ -89,14 +111,21 @@ foreach ($relative in $cacheDirs) {
     }
 }
 
-Write-Step "Launching official Claude through proxy..."
-$args = @(
+Write-Step "Launching official Claude through proxy (AUMID activation)..."
+$claudeArgs = @(
     "--proxy-server=http://127.0.0.1:$ProxyPort",
     "--ignore-certificate-errors",
     "--lang=zh-CN"
 )
 
-Start-Process -FilePath $officialExe -ArgumentList $args -WorkingDirectory (Split-Path $officialExe -Parent)
+# Launch via the package's app activation (AUMID), NOT the inner exe path.
+# Directly starting WindowsApps\...\Claude.exe on 1.15962.x makes the app exit
+# instantly (it never reaches the main process logger). Proper MSIX activation
+# keeps the package identity intact AND still forwards our Chromium switches,
+# because Claude is a Windows.FullTrustApplication.
+$aumid = "$($pkg.PackageFamilyName)!Claude"
+Write-Step "AUMID: $aumid"
+Start-Process -FilePath "shell:AppsFolder\$aumid" -ArgumentList $claudeArgs
 
 Write-Success "Official Claude launched with proxy interception"
 Write-Host "Proxy stdout: $proxyOut" -ForegroundColor Gray

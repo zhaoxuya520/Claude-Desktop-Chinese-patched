@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
+const net = require("net");
 const fzstd = require("fzstd");
 const { Proxy } = require("http-mitm-proxy");
 
@@ -10,13 +11,33 @@ const projectRoot = path.resolve(__dirname, "..");
 const resourcesDir = path.join(projectRoot, "resources");
 const frontendZhPath = path.join(resourcesDir, "frontend-zh-CN.json");
 const statsigZhPath = path.join(resourcesDir, "statsig-zh-CN.json");
+const dynamicZhPath = path.join(resourcesDir, "frontend-dynamic-zh-CN.json");
 const frontendEnPath = path.join(process.env.LOCALAPPDATA || process.env.USERPROFILE, "Claude-zh-CN", "app", "resources", "ion-dist", "i18n", "en-US.json");
 const overridesJson = "{}\n";
 
 const frontendEn = fs.existsSync(frontendEnPath) ? JSON.parse(fs.readFileSync(frontendEnPath, "utf8")) : {};
 const frontendZh = fs.readFileSync(frontendZhPath, "utf8");
 const statsigZh = fs.readFileSync(statsigZhPath, "utf8");
-const frontendZhObject = JSON.parse(frontendZh);
+const dynamicZh = fs.existsSync(dynamicZhPath) ? fs.readFileSync(dynamicZhPath, "utf8") : "{}\n";
+
+// Prefer the OFFICIAL zh strings shipped inside the installed Claude (path passed
+// by the launcher via CLAUDE_ZH_OFFICIAL_I18N), merged over the bundled fallback.
+// This auto-tracks whatever Claude version is installed and avoids bundling /
+// redistributing Anthropic's translation in this repo.
+const officialI18nPath = process.env.CLAUDE_ZH_OFFICIAL_I18N || "";
+let frontendZhObject = JSON.parse(frontendZh);
+if (officialI18nPath && fs.existsSync(officialI18nPath)) {
+  try {
+    const official = JSON.parse(fs.readFileSync(officialI18nPath, "utf8"));
+    frontendZhObject = Object.assign({}, frontendZhObject, official);
+    process.stderr.write(`[zh] merged official i18n (${Object.keys(official).length} keys) from ${officialI18nPath}\n`);
+  } catch (err) {
+    process.stderr.write(`[zh] failed to read official i18n: ${err.message}\n`);
+  }
+} else {
+  process.stderr.write(`[zh] official i18n not provided; using bundled fallback only\n`);
+}
+const frontendZhServed = JSON.stringify(frontendZhObject);
 const exactMap = (() => {
   const pending = new Map();
   const blocked = new Set();
@@ -190,7 +211,7 @@ function log(message) {
 function shouldPatchHtml(host, urlPath, contentType) {
   if (host !== "claude.ai") return false;
   if (!/text\/html/i.test(contentType || "")) return false;
-  return urlPath === "/" || urlPath.startsWith("/chat") || urlPath.startsWith("/settings") || urlPath.startsWith("/login") || urlPath.startsWith("/projects");
+  return urlPath === "/" || urlPath.startsWith("/chat") || urlPath.startsWith("/settings") || urlPath.startsWith("/login") || urlPath.startsWith("/projects") || urlPath.startsWith("/task") || urlPath.startsWith("/new") || urlPath.startsWith("/recents");
 }
 
 function sendTextResponse(ctx, statusCode, contentType, body) {
@@ -235,13 +256,19 @@ proxy.onRequest((ctx, callback) => {
 
   if (host === "claude.ai" && (urlPath === "/i18n/zh-CN.json" || urlPath === "/i18n/en-US.json")) {
     log(`serve local frontend zh: ${host}${urlPath}`);
-    sendTextResponse(ctx, 200, "application/json", frontendZh);
+    sendTextResponse(ctx, 200, "application/json", frontendZhServed);
     return;
   }
 
   if (host === "claude.ai" && (urlPath === "/i18n/statsig/zh-CN.json" || urlPath === "/i18n/statsig/en-US.json")) {
     log(`serve local statsig zh: ${host}${urlPath}`);
     sendTextResponse(ctx, 200, "application/json", statsigZh);
+    return;
+  }
+
+  if (host === "claude.ai" && (urlPath === "/i18n/dynamic/zh-CN.json" || urlPath === "/i18n/dynamic/en-US.json")) {
+    log(`serve local dynamic zh: ${host}${urlPath}`);
+    sendTextResponse(ctx, 200, "application/json", dynamicZh);
     return;
   }
 
@@ -308,6 +335,50 @@ proxy.onResponse((ctx, callback) => {
   });
 
   callback();
+});
+
+// Selective MITM: only claude.ai is intercepted (i18n JSON swap + HTML hook
+// injection). Everything else is blind-tunneled (raw TCP passthrough, no TLS
+// interception). MITM-ing every host — http-mitm-proxy's default — breaks the
+// Cowork / Code modes: those connect to api.anthropic.com and
+// *.claudeusercontent.com (the VM bridge, SSH-over-WebSocket) from a Node
+// subprocess that does REAL certificate validation. --ignore-certificate-errors
+// only relaxes Chromium's renderer, not that Node client, so it rejects our
+// self-signed MITM cert and the session "goes offline" (socket hang up /
+// ECONNRESET). Tunneling gives those connections the genuine end-to-end TLS, so
+// everything except the translated pages works untouched.
+const tunneledHosts = new Set();
+proxy.onConnect((req, clientSocket, head, callback) => {
+  const parts = String(req.url || "").split(":");
+  const host = (parts[0] || "").toLowerCase();
+  const port = Number(parts[1]) || 443;
+
+  if (host === "claude.ai") {
+    return callback(); // let http-mitm-proxy terminate TLS and run our handlers
+  }
+
+  if (!tunneledHosts.has(host)) {
+    tunneledHosts.add(host);
+    log(`tunnel passthrough (no MITM): ${host}:${port}`);
+  }
+
+  clientSocket.pause();
+  const serverSocket = net.connect(port, host, () => {
+    clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+    if (head && head.length) serverSocket.write(head);
+    serverSocket.pipe(clientSocket);
+    clientSocket.pipe(serverSocket);
+    clientSocket.resume();
+  });
+  serverSocket.on("error", (err) => {
+    log(`tunnel error ${host}:${port}: ${err && err.message ? err.message : err}`);
+    clientSocket.destroy();
+  });
+  clientSocket.on("error", () => serverSocket.destroy());
+  serverSocket.on("close", () => clientSocket.destroy());
+  clientSocket.on("close", () => serverSocket.destroy());
+  // Intentionally do NOT call callback(): that keeps http-mitm-proxy from taking
+  // over this socket and running its MITM path.
 });
 
 proxy.listen({ port, host: "0.0.0.0" });

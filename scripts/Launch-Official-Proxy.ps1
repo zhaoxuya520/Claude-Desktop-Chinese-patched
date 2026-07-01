@@ -37,10 +37,28 @@ if (-not (Test-Path -LiteralPath $officialExe)) {
     throw "Official Claude exe not found: $officialExe"
 }
 
-# Official zh strings shipped inside THIS installed version. The proxy reads them
-# at runtime (see CLAUDE_ZH_OFFICIAL_I18N below) so we always track the installed
-# version and never bundle/redistribute Anthropic's translation.
-$officialZh = Join-Path $pkg.InstallLocation "app\resources\ion-dist\i18n\zh-CN.json"
+# Official zh strings: Anthropic ships them inside SOME Claude versions
+# (app\resources\ion-dist\i18n\zh-CN.json) but not others -- 1.17377 dropped the
+# file, and claude.ai does not serve Chinese either. So don't depend on the
+# CURRENT version having it: scan EVERY installed Claude package, and cache the
+# last good copy under %LOCALAPPDATA% so coverage survives an update that removes
+# it. The proxy reads whatever we point CLAUDE_ZH_OFFICIAL_I18N at (below).
+$zhCacheDir = Join-Path $env:LOCALAPPDATA "claude-zh-proxy"
+$zhCache = Join-Path $zhCacheDir "official-zh-CN.json"
+$officialFound = Get-AppxPackage |
+    Where-Object { $_.Name -eq "Claude" } |
+    ForEach-Object { Join-Path $_.InstallLocation "app\resources\ion-dist\i18n\zh-CN.json" } |
+    Where-Object { Test-Path -LiteralPath $_ } |
+    Select-Object -First 1
+if ($officialFound) {
+    if (-not (Test-Path -LiteralPath $zhCacheDir)) {
+        New-Item -ItemType Directory -Force -Path $zhCacheDir | Out-Null
+    }
+    Copy-Item -LiteralPath $officialFound -Destination $zhCache -Force -ErrorAction SilentlyContinue
+}
+# Prefer the cache (last known good); fall back to whatever we just found, or
+# $null if no installed version ever shipped zh and the cache is still empty.
+$officialZh = if (Test-Path -LiteralPath $zhCache) { $zhCache } else { $officialFound }
 
 Write-Step "Stopping existing Claude Desktop (preserving Claude Code) and old proxy..."
 # Only kill the packaged Claude Desktop (runs from WindowsApps); never touch a
@@ -58,12 +76,12 @@ $proxyErr = Join-Path $env:LOCALAPPDATA "Claude-zh-proxy-official-stderr.log"
 Remove-Item $proxyOut, $proxyErr -Force -ErrorAction SilentlyContinue
 
 Write-Step "Starting zh proxy on 127.0.0.1:$ProxyPort ..."
-if (Test-Path -LiteralPath $officialZh) {
+if ($officialZh -and (Test-Path -LiteralPath $officialZh)) {
     $env:CLAUDE_ZH_OFFICIAL_I18N = $officialZh
     Write-Step "Official zh source: $officialZh"
 } else {
     Remove-Item Env:\CLAUDE_ZH_OFFICIAL_I18N -ErrorAction SilentlyContinue
-    Write-Err "Official zh not found; proxy will use bundled fallback only"
+    Write-Err "Official zh not found in any installed version and no cache; bundled fallback only"
 }
 
 $proxyProc = Start-Process -FilePath "node.exe" `

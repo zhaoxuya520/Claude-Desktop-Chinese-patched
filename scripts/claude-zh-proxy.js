@@ -29,8 +29,16 @@ let frontendZhObject = JSON.parse(frontendZh);
 if (officialI18nPath && fs.existsSync(officialI18nPath)) {
   try {
     const official = JSON.parse(fs.readFileSync(officialI18nPath, "utf8"));
-    frontendZhObject = Object.assign({}, frontendZhObject, official);
-    process.stderr.write(`[zh] merged official i18n (${Object.keys(official).length} keys) from ${officialI18nPath}\n`);
+    // Prefer any Chinese over English. Official Chinese wins over the bundled
+    // string, but a bundled Chinese string is NOT clobbered by an official value
+    // that is still English -- e.g. keys the official pack left untranslated, or
+    // our OWN gap translations in frontend-zh-CN.json that the official pack lacks.
+    const isZh = (s) => typeof s === "string" && /[一-鿿]/.test(s);
+    let merged = 0;
+    for (const [k, v] of Object.entries(official)) {
+      if (isZh(v) || !isZh(frontendZhObject[k])) { frontendZhObject[k] = v; merged++; }
+    }
+    process.stderr.write(`[zh] merged official i18n (${merged}/${Object.keys(official).length} keys) from ${officialI18nPath}\n`);
   } catch (err) {
     process.stderr.write(`[zh] failed to read official i18n: ${err.message}\n`);
   }
